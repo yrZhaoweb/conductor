@@ -7,9 +7,9 @@ description: Use when a user asks for a manager/管理者会话 to coordinate �
 
 ## Overview
 
-Use this skill to keep the current session as the manager: define the goal, split all executable work, delegate to agents, track progress, and summarize outcomes.
+Use this skill to keep the current session as the manager: define the goal, split executable work, delegate bounded tasks, persist state, track evidence, and summarize outcomes.
 
-The manager owns coordination by default. Development, testing, review, integration, and acceptance are delegated to child agents unless a documented trivial exemption or runtime fallback applies.
+The manager coordinates by default. Implementation, testing, review, integration, and acceptance are delegated unless a documented trivial exemption or runtime fallback applies.
 
 ## When to Use
 
@@ -27,22 +27,31 @@ Use when the user asks for or implies:
 
 Do not use when:
 
-- The task is small enough for one direct pass
-- Workstreams touch the same files or shared state so strongly that parallel edits would conflict
+- The task is small enough for one direct pass and does not need delegated evidence
+- Workstreams touch the same files or shared state so strongly that delegation would add coordination risk
 - The user only wants a quick answer, not execution
-- The environment has no usable agent/delegation tool and the user has not approved fallback handling
+- The environment has no usable delegation tool and the user has not approved fallback handling
 
 ## Manager Contract
 
 1. Restate the concrete goal in one sentence.
 2. Define success criteria before work starts.
 3. List scope boundaries, including explicit non-goals.
-4. Split by stable boundaries: module, route, feature, data source, test layer, or document section.
-5. Write a Task Card for every executable task before dispatch.
-6. Track ownership, dependencies, blockers, and evidence returned by each agent.
-7. Summarize only after the assigned acceptance agent has reported the acceptance result, or after clearly labeling a fallback path with no delegated acceptance.
+4. Choose the workload level: trivial, lightweight, standard, or large goal.
+5. Create or update the persistent state files before dispatch.
+6. Write a Task Card for every executable task, including cold-start inputs and allowed paths.
+7. Track ownership, dependencies, blockers, reports, and acceptance evidence in `.conductor/`.
+8. Summarize only after acceptance reports a result, or after clearly labeling fallback work with no delegated acceptance.
 
 If requirements are ambiguous, surface the ambiguity before dispatch. Do not let workers guess product or scope decisions independently.
+
+## Workload Levels
+
+- **Direct pass**: Do not use this skill when a task is small enough for one normal response and does not need delegated evidence.
+- **Trivial exemption**: The manager may directly handle a single-file, under-10-line, no-logic correction such as typo, formatting, broken link, or obvious metadata. Label the final report `trivial manager edit` and include the check performed.
+- **Lightweight mode**: Use for one slice, low risk, no parallel edits, no shared-file conflict, and clear verification. Dispatch implementation plus acceptance. The acceptance agent must independently rerun at least one key check; a separate testing or review agent is optional.
+- **Standard mode**: Use implementation plus the needed testing, review, integration, and acceptance roles. Prefer 2-5 workers when boundaries are clean.
+- **Large goal mode**: Use phases, durable planning artifacts, phase gates, and separate acceptance for each phase.
 
 ## Delegation Policy
 
@@ -50,11 +59,30 @@ Default rule: the manager does not implement, test, review, integrate, or accept
 
 Allowed exceptions:
 
-- **Trivial exemption**: The manager may directly handle a single-file, under-10-line, no-logic correction such as typo, formatting, broken link, or obvious metadata. The final report must label it as `trivial manager edit` and include the check performed.
-- **Runtime fallback**: If no delegation tool is available, ask the user whether to switch to a single-agent workflow or produce a complete task plan only. If continuing without delegation, label every status as `not delegated` and `no delegated evidence`. Never imply that a child agent ran.
-- **Emergency stop**: If a worker reports unsafe overlap, missing inputs, or scope coupling, stop dispatch for that slice and re-plan before more edits happen.
+- **Trivial exemption**: allowed only under the workload rule above.
+- **Runtime fallback**: If no delegation tool is available, ask whether to switch to a single-agent workflow or produce a task plan only. If continuing without delegation, label every status as `not delegated` and `no delegated evidence`.
+- **Emergency stop**: If a worker reports unsafe overlap, missing inputs, or scope coupling, stop dispatch for that slice and re-plan.
 
 No fake delegation: do not invent child-agent reports, evidence, acceptance, or review.
+
+## Persistent State
+
+For any non-trivial run, create a `.conductor/` directory in the active repo or working folder. If the target repo should not be modified, create it in the manager's workspace and record that location in the final report.
+
+Required files:
+
+```text
+.conductor/state.md                 # goal, success criteria, mode, phases, current status
+.conductor/tasks/<task-id>.md        # one Task Card per delegated task
+.conductor/reports/<task-id>.md      # one Worker Report or Acceptance Gate result per completed task
+```
+
+State rules:
+
+- Update `state.md` before dispatch, after every status change, when a report arrives, and before final summary.
+- A manager resuming after compaction or restart must read `state.md`, then the active task cards and latest reports before continuing.
+- Do not rely only on chat history, todo lists, or memory for long-running work.
+- If files cannot be written, report `persistent state unavailable` and use the runtime fallback labels.
 
 ## Runtime Adapter
 
@@ -62,20 +90,20 @@ Use the local runtime's available delegation mechanism without hard-coding this 
 
 | Runtime | Dispatch pattern | Tracking pattern |
 | --- | --- | --- |
-| Claude Code | Use the Task tool to start child agents with Task Cards. | Track task IDs, statuses, and reports in the manager todo list. |
-| Codex / CLI / other agents | Use independent sessions, processes, worktrees, or the user's watchdog/script loop when available. | Track task IDs, session names, files, commands, and returned reports in the manager plan. |
+| Claude Code | Use the Task tool to start child agents with Task Cards. | Track status in todo list and `.conductor/`. |
+| Codex / CLI / other agents | Use independent sessions, processes, worktrees, or the user's watchdog/script loop when available. | Track session names, task IDs, files, commands, and reports in `.conductor/`. |
 | No delegation tool | Use the runtime fallback above. | Mark work as not delegated; do not claim multi-agent evidence. |
 
-The Task Card and Worker Report formats below are the adapter boundary. Runtime-specific mechanics may vary; the contract does not.
+The Task Card and Worker Report formats are the adapter boundary. Runtime-specific mechanics may vary; the contract does not.
 
-## Task Split Rules
+## Task Splitting
 
 Good worker tasks are independent and have a clear output:
 
 - "Fix sales dashboard filter counts; report changed files, tests, and remaining risk."
 - "Inspect media import task creation flow; do not edit ads integration code; return root cause and patch."
 - "Review release docs for missing gates; provide file:line evidence and proposed text."
-- "Run acceptance for the completed slices; report pass/fail, evidence, and unresolved risk."
+- "Run acceptance for the completed slice; rerun the key check and report pass/fail."
 
 Bad worker tasks are vague or overlapping:
 
@@ -83,7 +111,7 @@ Bad worker tasks are vague or overlapping:
 - "Check everything."
 - "One agent edits frontend while another edits the same component."
 
-Prefer 2-5 workers for execution plus separate agents for testing/review/acceptance when needed. More workers only help when boundaries are clean and the manager can still coordinate dependencies.
+Use the templates in `references/templates.md` for Task Cards, worker prompts, Worker Reports, and Acceptance Gates. A worker prompt is just the Task Card plus the rules from that reference.
 
 ## Parallel Edit Safety
 
@@ -93,7 +121,7 @@ Before dispatching implementation tasks:
 - Two parallel workers must not write the same file or tightly coupled shared state.
 - Shared types, config, routing, migrations, API contracts, and generated files need one declared owner.
 - If slices need the same files, run them serially, use separate worktrees, or assign an integration agent to reconcile after isolated edits.
-- If overlap is discovered after dispatch, pause the affected workers, merge findings, and reassign narrower tasks.
+- If overlap is discovered after dispatch, pause affected workers, update `.conductor/state.md`, and reassign narrower tasks.
 
 High-conflict work is still compatible with this skill, but it becomes phased or serial instead of parallel.
 
@@ -107,17 +135,16 @@ One huge goal
 -> task graph
 -> small child-agent tasks
 -> testing/review/integration/acceptance agents
+-> persisted reports
 -> manager summary
 ```
 
-Before dispatching implementation for a huge goal, assign child agents to produce the durable planning artifacts:
+Before dispatching implementation for a huge goal, assign child agents to produce durable planning artifacts:
 
 - **Goal brief**: user outcome, constraints, non-goals, and acceptance criteria.
 - **Architecture/design**: module boundaries, data contracts, routes, permissions, external dependencies, and integration points.
 - **Execution plan**: phases, task IDs, dependencies, owners, expected artifacts, and stop/go gates.
 - **Acceptance checklist**: scenario-level checks that an acceptance agent can run without relying on manager judgment.
-
-Use phases when the task graph is too large to fit in one reliable dispatch. A phase should have a visible deliverable and an acceptance task. The manager may start the next phase only after the assigned acceptance agent reports the current phase result.
 
 Do not dispatch a child agent with "build the whole app" or "finish the entire system." Split until each task has a bounded file/module area, expected output, and evidence requirement.
 
@@ -125,7 +152,7 @@ Do not dispatch a child agent with "build the whole app" or "finish the entire s
 
 Every phase ends with an acceptance gate:
 
-- **Pass**: All success criteria have evidence. Continue to the next phase.
+- **Pass**: All success criteria have evidence and the acceptance agent reran at least one key check. Continue to the next phase.
 - **Partial**: Some criteria pass, but gaps remain. Create fix or verification tasks before continuing, unless the user explicitly accepts the remaining risk.
 - **Fail**: Required criteria are not met. Re-plan or roll back the failed slice before continuing.
 - **Blocked**: A dependency, credential, environment, or product decision is missing. Ask for the missing input or dispatch an investigation task.
@@ -134,109 +161,25 @@ The manager may coordinate the response to a gate result, but must not replace t
 
 ## Required Agent Roles
 
-For delivery work, delegate these roles instead of doing them in the manager session:
-
 - **Implementation agent**: changes code, docs, data artifacts, or configuration.
 - **Testing agent**: runs focused checks and reports command/runtime evidence.
 - **Review agent**: reviews implementation quality, regressions, and scope adherence.
-- **Acceptance agent**: decides whether the user goal is met and reports pass/fail with evidence.
+- **Acceptance agent**: decides whether the user goal is met, reruns at least one key check, and reports pass/partial/fail/blocked with evidence.
 - **Integration agent**: merges or reconciles slices when multiple implementation agents touch related areas.
 
-One child agent can hold multiple roles only when the task is small and independence is not compromised. The manager must not take any of these roles except under the Delegation Policy's trivial exemption or runtime fallback.
-
-## Task Card Template
-
-Create a Task Card before each dispatch.
-
-```text
-Task ID: <stable ID, e.g. P1-API-01>
-Role: <implementation / testing / review / acceptance / integration / investigation>
-Owner: <agent/session identifier, or unassigned>
-Status: <pending / running / done / partial / blocked / failed>
-Objective: <single bounded outcome>
-Scope: <features, modules, routes, datasets, docs, or artifacts included>
-Allowed paths: <files/directories the worker may edit or inspect>
-Non-goals: <nearby work the worker must avoid>
-Inputs:
-- Cold-start context: <repo path, branch, commands, conventions, decisions, prior findings>
-- Source artifacts: <files, tickets, screenshots, logs, URLs, data rows>
-Depends-on: <task IDs or "none">
-Expected evidence: <commands, tests, screenshots, file:line refs, data inspection, commits>
-Stop condition: <when to stop and report instead of guessing>
-```
-
-`Inputs` must assume the child agent starts cold and cannot see the manager's conversation. Include repo path, relevant files, constraints, previous conclusions, and exact success criteria inside the prompt.
-
-## Worker Prompt Template
-
-```text
-Goal: <overall user goal>
-Task ID: <task ID>
-Role: <assigned role>
-Your slice: <bounded module/workstream>
-Scope: <allowed files/features/data>
-Allowed paths: <files/directories you may edit or inspect>
-Non-goals: <what to avoid>
-Inputs and cold-start context:
-- <repo path, branch, conventions, prior findings, commands, data, screenshots, URLs>
-Depends-on: <task IDs or "none">
-Expected output:
-- Findings or changes
-- Worker Report using the required template
-- Evidence: commands, tests, logs, file:line references, screenshots, data rows, or commit IDs
-- Risks or unresolved blockers
-Rules:
-- Do not modify unrelated areas.
-- Do not self-accept unless you were explicitly assigned the acceptance role.
-- Stop and report if scope is coupled with another slice.
-```
-
-## Worker Report Template
-
-Every worker must return:
-
-```text
-Task ID: <task ID>
-Status: <done / partial / blocked / failed>
-Changed: <files, artifacts, commits, or "none">
-Evidence:
-- <command/check/file:line/screenshot/data row> -> <result>
-Findings:
-- <fact or result>
-Risks:
-- <remaining risk, or "none known">
-Needs-manager-decision:
-- <decision needed, or "none">
-```
-
-Reports without evidence are incomplete. The manager may ask for a corrected report or dispatch a verification task.
-
-## Acceptance Gate
-
-Acceptance agents must answer four questions:
-
-```text
-Task ID: <acceptance task ID>
-Acceptance target: <phase, release, feature, or full goal>
-1. Were all success criteria checked? <yes/no, list unchecked criteria>
-2. What evidence proves each checked criterion? <criterion -> evidence>
-3. What failed, was skipped, or remains unverified? <explicit gaps>
-4. Final judgment: <pass / partial / fail / blocked>
-```
-
-Acceptance must be based on returned evidence and any direct checks assigned to the acceptance agent. "Looks good" is not an acceptance result.
+One child agent can hold multiple roles only when the workload level allows it and independence is not compromised.
 
 ## Manager Loop
 
-1. **Plan**: Create a short task list with one `in_progress` manager step.
-2. **Card**: Write Task Cards with cold-start inputs, allowed paths, dependencies, evidence, and stop conditions.
-3. **Dispatch**: Start independent workers only after scope, success criteria, roles, dependencies, and edit safety are clear.
-4. **Monitor**: Track each worker as pending, running, done, blocked, or needs review.
-5. **Coordinate handoffs**: Route implementation outputs to testing, review, integration, and acceptance agents.
-6. **Completeness check**: Confirm each required role returned its report. Do not perform technical review or acceptance yourself.
-7. **Report**: Give the user the delegated final state, proof provided by agents, changed boundaries, and residual risk.
+1. **Plan**: Choose workload level, define success criteria, and create `.conductor/state.md`.
+2. **Card**: Write each Task Card to `.conductor/tasks/<task-id>.md`.
+3. **Dispatch**: Start independent workers only after scope, roles, dependencies, cold-start inputs, and edit safety are clear.
+4. **Persist**: Update `.conductor/state.md` whenever a task starts, blocks, completes, or changes owner.
+5. **Coordinate**: Route implementation outputs to testing, review, integration, and acceptance agents as required by the workload level.
+6. **Accept**: Require the Acceptance Gate format, including the independent rerun check. Store it in `.conductor/reports/`.
+7. **Report**: Give the user the delegated final state, proof provided by agents, changed boundaries, residual risk, and state-file location.
 
-Never develop, test, review, or accept inside the manager session unless using the documented trivial exemption or runtime fallback. If an acceptance report is missing, dispatch an acceptance agent instead of deciding yourself.
+If acceptance is missing, dispatch an acceptance task instead of deciding yourself.
 
 ## Delegated Evidence Standard
 
@@ -252,13 +195,12 @@ If a check cannot run, the responsible child agent must say exactly why and what
 
 ## Common Failure Modes
 
-- **Manager starts doing the work**: stop, create the missing child-agent task, and delegate it.
+- **Manager starts doing the work**: stop, create the missing Task Card, and delegate or label a valid exemption.
+- **State only lives in chat**: create or repair `.conductor/` before continuing.
 - **Workers overlap**: pause, merge scope, and reassign narrower tasks or introduce an integration agent.
-- **No explicit non-goals**: add them before dispatch, especially for nearby but excluded modules.
-- **Cold-start context missing**: revise the Task Card inputs before dispatch; do not assume child agents saw the manager chat.
+- **Cold-start context missing**: revise the Task Card inputs before dispatch.
 - **Report is prose only**: request the Worker Report template with evidence.
-- **Too many agents**: reduce to the few independent slices that affect the goal.
-- **No acceptance agent**: create one; the manager must not decide pass/fail.
+- **Acceptance only reads reports**: require the independent rerun check before pass.
 - **No delegation runtime**: use fallback labeling; never invent worker reports.
 
 ## Output Shape
@@ -267,6 +209,8 @@ For substantial work, report:
 
 ```text
 Goal: <done / partial / failed / blocked>
+Mode: <trivial / lightweight / standard / large goal / fallback>
+State files: <.conductor location, or persistent state unavailable>
 Success criteria:
 - <criterion> -> <pass/fail/partial/unchecked> (<evidence>)
 Slices:
@@ -274,6 +218,8 @@ Slices:
 Changed: <files, artifacts, commits, or docs>
 Evidence:
 - <testing/review/acceptance reports from child agents>
+Acceptance rerun:
+- <command/check> -> <result>
 Residual risk: <only real remaining risk, or "none known">
 User action needed: <decisions, credentials, approvals, or "none">
 Delegation note: <delegated / trivial manager edit / fallback not delegated>
@@ -281,30 +227,27 @@ Delegation note: <delegated / trivial manager edit / fallback not delegated>
 
 ## Walkthrough Examples
 
-### Small Bug
+### Lightweight Bug
 
 Goal: fix one dashboard count bug without touching unrelated screens.
 
 ```text
+Mode: lightweight
+State: .conductor/state.md
+
 Task P1-IMPL-01
 Role: implementation
 Objective: Fix sales dashboard filter counts.
 Allowed paths: src/features/sales/dashboard/**, tests/sales/dashboard/**
-Inputs: cold-start repo path, failing scenario, expected count rule, test command.
 Expected evidence: changed files, focused test result, risk.
-
-Task P1-TEST-01
-Role: testing
-Depends-on: P1-IMPL-01
-Objective: Re-run focused analytics checks and one regression path.
 
 Task P1-ACC-01
 Role: acceptance
-Depends-on: P1-TEST-01
-Objective: Answer the four acceptance gate questions for the bug goal.
+Depends-on: P1-IMPL-01
+Objective: Verify the bug goal, rerun the focused test or request path, and answer the Acceptance Gate questions.
 ```
 
-Manager final report cites the implementation report, test command result, and acceptance judgment. If the acceptance task is missing, the manager does not declare done.
+Manager final report cites the implementation report, acceptance rerun result, and residual risk. If the acceptance task is missing, the manager does not declare done.
 
 ### Large App Phase
 
@@ -323,7 +266,7 @@ Phase 1: Foundation
 - P1-UI-01 shell, navigation, and empty states
 - P1-INT-01 integration across auth/data/UI
 - P1-TEST-01 smoke and route checks
-- P1-ACC-01 phase acceptance gate
+- P1-ACC-01 phase acceptance gate with independent rerun
 ```
 
 Parallel edits are allowed only when Task Cards have non-overlapping paths. Shared routing or config gets one owner or moves to the integration task.
