@@ -1,0 +1,4 @@
+interface:
+  display_name: "Conductor"
+  short_description: "Coordinate delegated multi-agent work"
+  default_prompt: "Use $conductor to coordinate this goal as the manager session across independent agents."
