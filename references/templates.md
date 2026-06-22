@@ -19,7 +19,9 @@ Allowed paths: <files/directories the worker may edit or inspect>
 Non-goals: <nearby work the worker must avoid>
 Red lines: <the irreversible points that always stop, even in auto — schema, API
   contracts, auth, deletions, cross-module contracts, PRD-uncovered core decisions,
-  plus any user additions>
+  plus any user additions; mark "red-line-triggered" if Allowed paths match a sensitive
+  pattern (migrations, *.proto, auth/, shared config/types) so the worker stops there
+  even if it does not recognize the global impact>
 Inputs:
 - Cold-start context: <repo path, branch, commands, conventions, decisions, prior findings>
 - Run root: <RUN_ROOT path; write reports/tasks only inside this run root>

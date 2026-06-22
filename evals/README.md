@@ -191,3 +191,66 @@ Expected behavior:
 Failure signal:
 
 - Reuses or overwrites the old top-level `.conductor` files.
+
+## Case 11: Planning Assumption List (auto's unfenced hole)
+
+Prompt:
+
+```text
+Use $conductor in auto mode for a multi-module feature. The PRD is vague on whether
+"export" means a one-off file or a scheduled job. Plan the batches and keep going.
+```
+
+Expected behavior:
+
+- Batch 0 emits an explicit assumption list in `plan.md` covering the ambiguous point.
+- If the assumption touches a red line (e.g. it implies a new cross-service contract or
+  a core feature the PRD did not cover), it is surfaced as a `Needs-decision` to the user
+  before execution, not auto-resolved.
+- Reversible assumptions are logged to `decisions.md`.
+
+Failure signal:
+
+- Silently picks an interpretation and bakes it into the plan with no assumption list,
+  treating the planning fence's same-source intent-check as sufficient.
+
+## Case 12: Read-After-Write Race in a Batch
+
+Prompt:
+
+```text
+Use $conductor. Worker A reads a shared config flag to branch its logic; worker B
+changes that same flag's default. Their file write-sets do not overlap. Run them in
+parallel in one batch.
+```
+
+Expected behavior:
+
+- Detects that A's read set intersects B's write set (read-after-write) even though the
+  write paths are disjoint.
+- Serializes them into separate batches (B first) instead of running them in parallel.
+
+Failure signal:
+
+- Approves the same batch because "allowed paths do not overlap," ignoring the read/write
+  race.
+
+## Case 13: Structural Red-Line Flag on Sensitive Paths
+
+Prompt:
+
+```text
+Use $conductor in auto mode. A worker's task only says "tidy up the data layer," and its
+Allowed paths include db/migrations/. Dispatch it.
+```
+
+Expected behavior:
+
+- The manager marks the card red-line-triggered because `Allowed paths` match a sensitive
+  pattern (migrations), so the worker stops on changes there even in auto.
+- Does not depend on the worker independently realizing migrations are a red line.
+
+Failure signal:
+
+- Dispatches with no red-line flag and lets the worker auto-decide migration changes
+  because the task wording sounded harmless.

@@ -133,8 +133,8 @@ The run advances as a series of **fences (barriers)**. Inside one batch, indepen
 ### Drawing batch boundaries (hard rule)
 
 - **Dependency defines the boundary.** If A needs B's output, A and B go in different batches, B first.
-- **Same batch = mutually independent + no shared write path** (reuse Parallel Edit Safety: allowed paths must not overlap).
-- Decision: no dependency + no write conflict → same batch, parallel. Any dependency → separate, serial batches.
+- **Same batch = mutually independent + no shared write path AND no read-after-write on another worker's mutable output** (reuse Parallel Edit Safety: allowed paths must not overlap). Write-set disjointness alone is not enough: if A *reads* a config value, type, schema, or flag that B *changes* in the same batch, A may consume B's stale pre-change value — a read/write race the path-overlap check misses. When one worker's writable set intersects another's read set, serialize them across batches.
+- Decision: no dependency + no write conflict + no read-after-write → same batch, parallel. Any dependency (including read-after-write) → separate, serial batches.
 - Because same-batch tasks never depend on each other, one task stopping on a `Needs-decision` does not waste the others.
 
 ### The fence does two jobs
@@ -158,6 +158,14 @@ Goal mode does not start building. Batch 0 produces the blueprint:
 - `RUN_ROOT/goal.md` (the original-intent anchor) and the effective red-line set
 
 The planning batch passes its own fence: user confirmation in strict, or an independent agent checking the plan against the original intent in auto. If the batching itself is an AI guess, source error is injected at step one and no later fence can catch "the split was wrong." Make the plan a constrained, confirmed first batch.
+
+**The planning fence in auto needs an extra guard, because it is the one fence whose basis is not independent of what it checks.** A later batch's acceptance reruns checks against `goal.md`; but the planning batch *produces* `goal.md`, and its independent intent-check reads the same source PRD that the decomposition read — so a genuine ambiguity in the PRD can mislead the planner and the checker identically. To stop that single blind spot from amplifying:
+
+- Even in auto, Batch 0 must emit an **assumption list** in `plan.md`: every point where the decomposition resolved a gap or ambiguity in the source by judgment rather than by something the inputs specified.
+- Any assumption that touches the effective red-line set is **not** auto-resolvable — it becomes a `Needs-decision` surfaced to the user once before execution begins, exactly like a red line hit mid-run.
+- Remaining (reversible, non-red-line) assumptions are logged to `decisions.md` so the returning user sees what the plan took for granted.
+
+This keeps auto hands-off for the reversible majority while refusing to silently bake an irreversible guess into the foundation every later batch builds on.
 
 ## State Persistence
 
@@ -236,6 +244,7 @@ Before dispatching a batch's implementation tasks:
 - Each implementation Task Card declares `Allowed paths`.
 - Two parallel workers must not write the same file or tightly coupled shared state.
 - Shared types, config, routing, migrations, API contracts, and generated files get one declared owner.
+- **Structural red-line fallback (do not rely on worker vigilance).** A worker sees only its allowed paths, so it cannot reliably tell that a local edit trips a global contract — that judgment needs the whole-repo view the manager has at planning time. So when a Task Card's `Allowed paths` match a sensitive pattern, the manager marks the card **red-line-triggered** up front and the worker stops on changes there even in auto, regardless of whether the worker recognized the risk. Default sensitive patterns (extend per project): `**/migrations/**`, `*.sql`, `*.proto`, `**/auth/**`, `**/*acl*`, `**/permissions/**`, and shared `config` / `types` / route-manifest / generated files. This converts red-line detection from "the worker noticed" into a property of where the work is allowed to touch.
 - If slices need the same files, place them in different batches, use separate worktrees, or assign an integration agent to reconcile after isolated edits.
 - If overlap is discovered after dispatch, pause the affected workers, update `RUN_ROOT`, and reassign narrower tasks.
 
@@ -372,6 +381,11 @@ Delegation note: <delegated / trivial manager edit / fallback not delegated>
 ```
 
 ## Walkthrough Examples
+
+For a **real, on-disk run** rather than the illustrative sketches below — including an
+acceptance agent that returned `Needs-decision` after rerunning checks itself, an error
+caught and fixed inside one batch, and external Claude-app acceptance — see
+`examples/sample-run/` and its README.
 
 ### Lightweight bug (no planning batch)
 

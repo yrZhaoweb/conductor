@@ -26,21 +26,30 @@ It is built to fight three failure modes of AI-written code on big or long-runni
 
 ## Install
 
-Copy this repository into your skills directory:
+Copy this repository into your runtime's skills directory. Conductor is
+runtime-agnostic (see the Runtime Adapter table in `SKILL.md`); pick the path your
+agent loads skills from:
 
 ```bash
-mkdir -p ~/.codex/skills/conductor
-cp -R README.md SKILL.md agents references evals ~/.codex/skills/conductor/
+# Claude Code
+SKILLS_DIR=~/.claude/skills
+# Codex
+# SKILLS_DIR=~/.codex/skills
+# or your runtime's equivalent: SKILLS_DIR=<your-skills-dir>
+
+mkdir -p "$SKILLS_DIR/conductor"
+cp -R README.md SKILL.md agents references evals examples "$SKILLS_DIR/conductor/"
 ```
 
-Then invoke it as `$conductor` when your runtime supports skill references.
+Then invoke it as `$conductor` (or your runtime's skill-reference form).
 
 ## Contents
 
 - `SKILL.md`: the orchestration contract — modes, batch execution, persistence, the uncertainty rule, acceptance, and the manager loop.
 - `references/templates.md`: Task Card, Worker Prompt, Worker Report, Acceptance Gate, and External Acceptance Prompt templates.
 - `evals/README.md`: prompt evals for mode confirmation, auto red-line stops, fallback honesty, edit conflicts, cold-start context, acceptance reruns, external acceptance, and run-root isolation.
-- `agents/openai.yaml`: optional agent metadata for runtimes that support it.
+- `examples/sample-run/`: a real, lightly redacted `RUN_ROOT` from an actual run — first-hand evidence of the contract in action (independent acceptance returning Needs-decision, an error caught and fixed inside one batch, external Claude acceptance).
+- `agents/openai.yaml`: optional manifest read by runtimes that support agent metadata (display name, short description, default invocation prompt). Runtimes that do not support it ignore the file; nothing in the contract depends on it.
 
 ## Run-root layout
 
