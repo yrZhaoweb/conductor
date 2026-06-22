@@ -39,7 +39,7 @@ const implementedHarnessClaims = [
 describe("M4 documentation handoff", () => {
   it("updates SKILL.md Manager Loop to call the harness and follow exit codes", () => {
     const skill = read("SKILL.md");
-    const managerLoop = skill.slice(skill.indexOf("## Manager Loop"), skill.indexOf("## Templates"));
+    const managerLoop = skill.slice(skill.indexOf("## Manager Loop"), skill.indexOf("## Output Shape"));
 
     assert.match(managerLoop, /conductor-harness/);
     assert.match(managerLoop, /exit codes?/i);
@@ -109,6 +109,30 @@ describe("M4 documentation handoff", () => {
     assert.match(readme, /semantic, enforced by model\/human not harness/);
     assert.match(skill, /semantic, enforced by model\/human not harness/);
   });
+
+  it("keeps SKILL concise and expands every quick-reference rule in references", () => {
+    const skill = read("SKILL.md");
+    const details = read("references/contract-details.md");
+    const skillLines = skill.trimEnd().split(/\r?\n/);
+    const quickReference = skill.slice(
+      skill.indexOf("## Contract Quick Reference"),
+      skill.indexOf("## When to Use")
+    );
+    const quickRuleLabels = [...quickReference.matchAll(/^- \*\*(.+?)\*\*/gm)]
+      .map((match) => normalizeRuleLabel(match[1]));
+    const detailRuleLabels = [...details.matchAll(/^## (.+)$/gm)]
+      .map((match) => normalizeRuleLabel(match[1]));
+
+    assert.ok(skillLines.length <= 250, `SKILL.md has ${skillLines.length} lines`);
+    assert.match(skill, /references\/contract-details\.md/);
+    assert.ok(quickRuleLabels.length > 0, "Quick Reference must list hard rules");
+    for (const label of quickRuleLabels) {
+      assert.ok(detailRuleLabels.includes(label), `Missing reference expansion for ${label}`);
+    }
+    for (const label of detailRuleLabels) {
+      assert.ok(quickRuleLabels.includes(label), `Reference introduces a top-level rule outside Quick Reference: ${label}`);
+    }
+  });
 });
 
 function escapeRegExp(value: string): string {
@@ -124,4 +148,8 @@ function assertCommandDispatches(cli: string, command: string): void {
   if (parts[2]) {
     assert.match(cli, new RegExp(`args\\.positionals\\[2\\] === "${escapeRegExp(parts[2])}"`), `${command} missing tertiary dispatch`);
   }
+}
+
+function normalizeRuleLabel(label: string): string {
+  return label.toLowerCase().replace(/\s*\(.+?\)\s*/g, "").replace(/\s+/g, " ").trim();
 }
