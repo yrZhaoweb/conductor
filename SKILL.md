@@ -34,6 +34,22 @@ one sentence starts goal mode
   -> goal done -> manager reports final delivery state
 ```
 
+## Contract Quick Reference
+
+The executable contract on one screen. Each line is a hard rule; the rationale and the
+edge cases live in the sections below — read on when you need the "why," but these are
+the rules you must follow even if you read nothing else.
+
+- **Mode** — default `auto` (announce in one line, do not block); `strict` only on explicit user request. auto: reversible point → decide + log to `decisions.md`; red line → stop and ask. strict: any real uncertainty stops the goal, a human decides.
+- **Manager role** — plan, split, dispatch, track, persist, report. Never implement, test, review, integrate, or accept (only exceptions: trivial exemption, runtime fallback).
+- **Uncertainty rule** — do the certain at full speed; an unspecified, multi-answer point becomes a `Needs-decision`, never a silent guess. The manager never answers a Needs-decision itself (reversible auto calls excepted, logged).
+- **Batches & fences** — serial batches, parallel only within a batch. Same batch = no dependency + no shared write path + no read-after-write on another worker's output. Every batch ends at a fence (doubt closure + independent acceptance); an error cannot cross a fence.
+- **Red lines (stop even in auto)** — schema/migrations, external API contracts, auth/permissions, deletions/irreversible ops, cross-module contracts, PRD-uncovered core decisions, + user additions. Allowed-paths matching sensitive patterns auto-flag red-line.
+- **Acceptance independence** — judge against `goal.md` + at least one check the acceptance agent reran first-hand; never the implementer's report conclusions; no self-acceptance.
+- **External/joint acceptance** — a formal fence member returning explicit PASS/FAIL, persisted. In auto, proactively recruit a party via computer-use at the final fence; if none is reachable, record `external acceptance unavailable` — never fabricate a verdict.
+- **State on disk** — unique `RUN_ROOT` under `.conductor/runs/<date>-<slug>/`; one line per task in session, full detail on disk. Never invent reports, evidence, or acceptance.
+- **Output** — see Output Shape at the end.
+
 ## When to Use
 
 Use when the user asks for or implies:

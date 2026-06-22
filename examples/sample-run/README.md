@@ -1,9 +1,11 @@
 # Sample Run — real Conductor artifacts
 
 This is **not a hand-written ideal flow.** It is the actual on-disk `RUN_ROOT` from a
-real Conductor run, copied here unchanged except for redacting two checked-in test
-credentials. It exists so the skill can be judged against first-hand evidence instead
-of its own prose — the same standard Conductor demands of its acceptance agents.
+real Conductor run, copied here essentially unchanged: two checked-in test credentials
+are redacted, and one line in `batches/0/summary.md` is annotated where it referenced an
+acceptance report that was never persisted to disk (see Notes / fidelity). It exists so
+the skill can be judged against first-hand evidence instead of its own prose — the same
+standard Conductor demands of its acceptance agents.
 
 - **Goal:** move the `yunfan-star` web app toward a reference admin UI (`tk-star.html`).
 - **Mode:** `auto`  ·  **Level:** standard  ·  **Date:** 2026-06-16
@@ -47,5 +49,10 @@ instead of compounding**. This run shows each one actually happening, not assert
 - This run predates the P2 mechanism changes (planning-batch assumption list, allowed-path
   red-line auto-flagging, read-after-write boundary check). It shows the contract those
   changes harden, not the hardened wording itself.
-</content>
-</invoke>
+- It also predates the run-root isolation convention. Its files sit at top-level
+  `.conductor/` (e.g. `.conductor/goal.md`) rather than under `.conductor/runs/<date>-<slug>/`.
+  Current SKILL.md forbids that top-level layout — treat these paths as a historical
+  artifact, not a template to copy.
+- `batches/0/summary.md` originally cited a re-acceptance report (`P0-ACC-02.md`) that was
+  never written to disk; that line is annotated here to record the gap honestly instead of
+  inventing the missing file (see below).
