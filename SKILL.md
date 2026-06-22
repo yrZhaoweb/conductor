@@ -1,6 +1,6 @@
 ---
 name: conductor
-description: Use when the user wants the current session to act as a manager / 管理者会话 that coordinates 子agent / multi-agent work toward a large or long-running goal without letting this session's context decay. Triggers include 多 agent, 每个模块一个子 agent, 管理者不参与开发/测试/review/验收, 巨大目标, 串行批次 / batch execution, auto / strict 模式, 落盘 / persistent state, 不确定即停 / needs-decision, delegated acceptance, parallel modules, phases, or task packs.
+description: Use when the user wants the current session to act as a manager / 管理者会话 that coordinates 子agent / multi-agent work toward a large or long-running goal without letting this session's context decay. Triggers include 多 agent, 每个模块一个子 agent, 管理者不参与开发/测试/review/验收, 巨大目标, 串行批次 / batch execution, auto / strict 模式（默认 auto，strict 需显式指定，auto 主动联合验收）, 落盘 / persistent state, 不确定即停 / needs-decision, delegated acceptance, parallel modules, phases, or task packs.
 ---
 
 # Conductor
@@ -21,14 +21,15 @@ Skeleton:
 
 ```text
 one sentence starts goal mode
-  -> confirm mode (auto / strict)             # do not guess this
+  -> mode defaults to auto; switch to strict only if the user says "strict" (announce, don't block)
   -> create a unique RUN_ROOT under .conductor/runs/
   -> Batch 0 = planning: decompose, plan batches, set per-batch acceptance, write goal.md
        -> planning passes a fence (user confirm in strict / independent intent-check in auto)
   -> execute batches serially, parallel within each:
        workers do only the certain; an uncertain point -> Needs-decision (handled per mode)
        fence: bulk-resolve doubts + independent acceptance vs original intent (rerun checks)
-              + any user-specified external/joint acceptance
+              + external/joint acceptance (auto proactively tries computer-use to recruit
+                other parties; strict uses any user-specified participants)
        pass -> persist, clear batch detail from context, advance
   -> goal done -> manager reports final delivery state
 ```
@@ -53,13 +54,15 @@ Do not use when:
 
 Mode is the skill's master switch. It decides one thing: **when a worker or the manager hits real uncertainty, does the run stop and ask you, or proceed on its own?**
 
-### Confirm mode before any work
+### Default is auto; strict is opt-in
 
-If the user has not stated a mode, stop and ask which to run — `auto` or `strict`. Do not default, do not guess, do not start the planning batch first. Choosing the mode is the run's first uncertainty point, and guessing it wrong is costly in both directions: a `strict` user who is silently auto-advanced loses control; an `auto` user who wanted hands-off work wakes to a blocked run with nothing done.
+The default mode is `auto`. If the user does not say otherwise, run in auto — do not block the start with a mode question. Announce it in one line ("Running in `auto`; say `strict` to take manual control of every decision") so the user can still override, but do not wait for an answer to begin planning.
 
-### strict — blocking
+Switch to `strict` only when the user explicitly asks — e.g. "strict", "mode 为 strict", "我要逐步确认". Defaulting to auto is a documented contract choice, **not** a guess at an uncertainty point: the posture is specified up front, and auto's own safeguards (red lines still stop, every autonomous call logged to `decisions.md`, and proactive external joint acceptance) keep an unattended run from running blind. The skill no longer halts at the start to ask which mode to run.
 
-Any real uncertainty stops at the fence and bounces to the user. If the user does not answer, nothing moves on that point. Use when the user is present and wants to approve key decisions.
+### strict — blocking, human-completed decisions
+
+strict is **opt-in**: the run enters it only when the user explicitly asks for it. In strict, any real uncertainty **stops the goal** and bounces to the user — the decision is completed by a human, never by the manager or a worker. If the user does not answer, nothing moves on that point and the goal waits. Use when the user is present and wants to approve every key decision.
 
 ### auto — autonomous, with a raised brake threshold
 
@@ -69,6 +72,8 @@ The user is away (e.g. asleep) and wants the run to make progress, then review a
 - **Irreversible / high-risk / global — a red line** — the worker stops and asks the user **even in auto**. Guess one of these wrong and every later batch builds on it; that is source error being amplified, and it cannot be cheaply undone after the user wakes.
 
 One line: strict asks about all uncertainty; auto asks only about the uncertainty that causes disaster if guessed wrong. auto does not turn off the brakes — it raises the threshold, braking at the cliff edge, not at every speed bump.
+
+Because the user is away, auto cannot lean on them as the independent judge. So auto **proactively seeks external joint acceptance**: at the final fence (and significant batch fences where feasible) it attempts to recruit one or more other parties through the local computer-use / browser tools — the Claude app, another model session, a human reviewer, or a named tool — and runs them through the formal External Acceptance gate. If no such party can be reached, auto does not block: it falls back to first-hand independent acceptance and records the missing external check explicitly (see External and Joint Acceptance).
 
 ### Red lines (the irreversible set)
 
@@ -107,7 +112,7 @@ The current session is the manager. It plans, splits, dispatches, tracks, persis
 
 Before the first execution batch:
 
-1. Restate the goal in one sentence and confirm the mode (Mode).
+1. Restate the goal in one sentence and set the mode — default `auto`; use `strict` only if the user explicitly asked (Mode). Announce the active mode in one line; do not block on it.
 2. Define success criteria and non-goals.
 3. Choose the workload level (Workload Levels).
 4. Create a unique run root under `.conductor/runs/`, then create `RUN_ROOT/goal.md` and `RUN_ROOT/plan.md`.
@@ -284,6 +289,8 @@ If a check cannot run, the responsible agent says exactly why and what evidence 
 
 If the user specifies an external acceptance participant — for example Claude App, a browser/Chrome session, Computer Use, another model conversation, a human reviewer, or a named tool — treat that participant as a formal fence member, not as casual advice.
 
+**In auto, the manager initiates this without being asked.** Because the away user cannot be the live judge, auto attempts to recruit at least one external party for the final acceptance fence (and significant batch fences where feasible) through the local computer-use / browser tools — for example opening the Claude app for a read-only review session, or driving a browser checkpoint. A reached party is treated exactly like a user-specified one: formal fence member, self-contained prompt, explicit verdict, persisted report. If no party can be reached — no computer-use tool, app unavailable, no reviewer — record `external acceptance unavailable` in the batch/final report and proceed on first-hand independent acceptance only. Never fabricate an external verdict.
+
 Rules:
 
 - Declare in `RUN_ROOT/plan.md` which batch or final fence requires external/joint acceptance.
@@ -328,14 +335,14 @@ One agent may hold several roles only when the workload level allows it and inde
 
 ## Manager Loop
 
-1. **Mode** — confirm `auto` / `strict` (ask if unspecified). In auto, record the effective red-line set.
+1. **Mode** — default to `auto`; use `strict` only if the user explicitly asked. Announce the active mode in one line (do not block on it). In auto, record the effective red-line set and plan to seek external joint acceptance at the final fence.
 2. **Run root** — create a unique `RUN_ROOT` under `.conductor/runs/` (or the manager workspace if the repo cannot be modified). Announce it once.
 3. **Plan batch** — dispatch the planning batch; write `RUN_ROOT/goal.md` and `RUN_ROOT/plan.md`. Pass its fence (user confirm in strict; independent intent-check in auto).
 4. For each execution batch, in order:
    - **Card** — write each Task Card to `RUN_ROOT/tasks/`; verify non-overlapping allowed paths.
    - **Dispatch** — start the batch's independent workers in parallel.
    - **Collect** — workers return done or `Needs-decision`; persist reports; keep one line each in session.
-   - **Fence** — handle the batch's doubts in bulk (escalate red lines and strict-mode calls to the user; log reversible auto calls); run independent acceptance against original intent; run any declared external/joint acceptance.
+   - **Fence** — handle the batch's doubts in bulk (escalate red lines and strict-mode calls to the user; log reversible auto calls); run independent acceptance against original intent; run any declared external/joint acceptance, and in auto proactively attempt external joint acceptance via computer-use (at least at the final fence), recording `external acceptance unavailable` if no party can be reached.
    - **Close** — on pass, archive to `RUN_ROOT/batches/N/`, clear batch detail from context, keep one summary line, and advance.
 5. **Closeout** — before declaring the goal complete, ensure all reports are written, the final fence is updated in `plan.md`, user-facing logs/docs are updated if requested, child agents are closed, residuals are classified, and all user-specified external acceptance gates have passed or been waived.
 6. **Deliver** — report the final state, per-batch acceptance evidence, changed boundaries, residual risk, and the `RUN_ROOT` location.
@@ -352,6 +359,8 @@ Task Card, Worker Prompt, Worker Report, Acceptance Gate, and External Acceptanc
 - **AI guesses past a gap** — convert the guess into a `Needs-decision` stop; escalate it, or, if reversible in auto, log it.
 - **Manager answers a Needs-decision itself** — escalate to the user instead (reversible auto calls excepted, with a log line).
 - **auto turns into "guess whenever"** — re-check the red lines; irreversible/global points stop even in auto.
+- **Start blocks on a mode question** — auto is the default; do not halt to ask. Announce the active mode and proceed; only an explicit user request switches to strict.
+- **auto skips external acceptance** — in auto, attempt computer-use joint acceptance at the final fence; if no party is reachable, record `external acceptance unavailable` and never fabricate a verdict.
 - **Acceptance only reads reports** — require a first-hand rerun and judgment against `goal.md`.
 - **State lives only in chat** — create/repair `RUN_ROOT`; one line per task in session, detail on disk.
 - **Runs overwrite each other** — stop writing to top-level `.conductor/goal.md` or `.conductor/reports/`; create a unique run root under `.conductor/runs/`.
