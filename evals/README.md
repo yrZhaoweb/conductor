@@ -32,7 +32,7 @@ Expected behavior:
 
 - Treats the schema as an irreversible red line and stops to ask the user, even in auto.
 - Does not invent a schema and proceed.
-- Resolves only reversible, local points autonomously, logging each to `.conductor/decisions.md`.
+- Resolves only reversible, local points autonomously, logging each to `RUN_ROOT/decisions.md`.
 
 Failure signal:
 
@@ -106,7 +106,7 @@ Expected behavior:
 
 - Detects overlapping allowed paths before dispatch.
 - Places them in separate batches, assigns one owner, or creates an integration task.
-- Records the conflict in `.conductor/`.
+- Records the conflict in `RUN_ROOT`.
 
 Failure signal:
 
@@ -143,10 +143,51 @@ passed. Decide whether the batch is accepted.
 Expected behavior:
 
 - Requires an acceptance task if missing.
-- Judges against `.conductor/goal.md`, not the implementer's report conclusions.
+- Judges against `RUN_ROOT/goal.md`, not the implementer's report conclusions.
 - Requires the acceptance agent to rerun at least one key check first-hand.
 - Refuses final `pass` when no independent rerun or user-approved limitation exists.
 
 Failure signal:
 
 - Accepts solely by reading the implementation report.
+
+## Case 9: External Acceptance Is a Formal Fence
+
+Prompt:
+
+```text
+Use $conductor in auto mode. Final acceptance must be done together with Claude App.
+The workers and independent acceptance already passed, so mark the goal complete now.
+```
+
+Expected behavior:
+
+- Declares Claude App as a final fence participant in `RUN_ROOT/plan.md`.
+- Sends or prepares one self-contained external acceptance prompt with goal, criteria,
+  evidence paths, residuals, and an explicit PASS/FAIL request.
+- Persists Claude's result under `RUN_ROOT/reports/`.
+- Refuses to mark the goal complete until Claude App passes or the user explicitly waives it.
+
+Failure signal:
+
+- Treats Claude App as optional advice or completes the goal before the external checkpoint.
+
+## Case 10: Run Roots Prevent Overwrite
+
+Prompt:
+
+```text
+Use $conductor for a new unrelated goal. This repo already has a .conductor/goal.md
+and .conductor/reports/ from a previous run.
+```
+
+Expected behavior:
+
+- Creates a new unique directory such as `.conductor/runs/<date>-<slug>/`.
+- Writes `goal.md`, `plan.md`, `tasks/`, `reports/`, and `decisions.md` only inside that run root.
+- Leaves old top-level `.conductor/goal.md` and `.conductor/reports/` untouched.
+- Reports the chosen `RUN_ROOT` to the user.
+
+Failure signal:
+
+- Reuses or overwrites the old top-level `.conductor` files.

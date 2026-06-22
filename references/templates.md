@@ -1,6 +1,8 @@
 # Conductor Templates
 
-The concrete exchange formats between a manager and delegated workers. Store completed Task Cards under `.conductor/tasks/` and reports under `.conductor/reports/`.
+The concrete exchange formats between a manager, delegated workers, acceptance agents, and external reviewers.
+
+Store completed Task Cards under `RUN_ROOT/tasks/` and reports under `RUN_ROOT/reports/`, where `RUN_ROOT` is the unique per-goal directory chosen by the manager, for example `.conductor/runs/20260622-1430-h5-chat/`.
 
 ## Task Card
 
@@ -20,6 +22,7 @@ Red lines: <the irreversible points that always stop, even in auto — schema, A
   plus any user additions>
 Inputs:
 - Cold-start context: <repo path, branch, commands, conventions, decisions, prior findings>
+- Run root: <RUN_ROOT path; write reports/tasks only inside this run root>
 - Source artifacts: <files, tickets, screenshots, logs, URLs, data rows>
 Depends-on: <task IDs or "none">
 Expected evidence: <commands, tests, screenshots, file:line refs, data inspection, commits>
@@ -73,7 +76,7 @@ Acceptance is the batch fence. Its basis must be independent of the work being a
 ```text
 Task ID: <acceptance task ID>
 Acceptance target: <batch / release / feature / full goal>
-Basis: read .conductor/goal.md and the batch's acceptance criteria directly.
+Basis: read <RUN_ROOT>/goal.md and the batch's acceptance criteria directly.
   Do NOT treat the implementer's report conclusions as evidence.
 
 1. Criteria checked? <yes/no; list any unchecked, taken from goal.md, not from the report>
@@ -83,4 +86,39 @@ Basis: read .conductor/goal.md and the batch's acceptance criteria directly.
 5. Judgment: <pass / partial / fail / blocked>
 ```
 
+Use the actual `RUN_ROOT/goal.md` path in the `Basis` line. If the acceptance target includes a runtime-only batch, distinguish code/static evidence from live runtime evidence and state any runtime mutations separately.
+
 Acceptance rests on `goal.md` plus at least one check the acceptance agent reran first-hand. "Looks good" and "the report says it passed" are not acceptance results. If a rerun cannot be performed, the judgment cannot be `pass` unless the user explicitly accepts that limitation.
+
+## External Acceptance Prompt
+
+Use this when the user requires a named external participant, such as Claude App, Browser/Chrome, Computer Use, another model session, or a human reviewer. The prompt must be self-contained because the reviewer may not share the manager's conversation context.
+
+```text
+External checkpoint: <batch/final goal>
+
+Please judge this as PASS / FAIL / PARTIAL / BLOCKED.
+If FAIL, list required rework. If PASS, list any non-blocking residuals.
+
+Original goal:
+<one-paragraph user goal and success criteria>
+
+Scope of this checkpoint:
+<what should be accepted now; what is out of scope>
+
+Evidence to inspect:
+- Goal/plan: <RUN_ROOT/goal.md>, <RUN_ROOT/plan.md>
+- Worker/runtime reports: <paths>
+- Independent acceptance reports: <paths>
+- Relevant files, commands, URLs, screenshots, rows, or logs: <paths/details>
+
+Known residuals to classify:
+- <residual> -> please decide blocker / non-blocking residual / follow-up checklist
+
+Questions for you:
+1. Does the evidence satisfy the original goal for this checkpoint?
+2. Are any residuals blockers?
+3. What is your explicit judgment: PASS / FAIL / PARTIAL / BLOCKED?
+```
+
+Persist the external review result as `RUN_ROOT/reports/<checkpoint>-EXTERNAL-<reviewer>.md`.

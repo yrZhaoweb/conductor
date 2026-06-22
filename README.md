@@ -10,11 +10,13 @@ It is built to fight three failure modes of AI-written code on big or long-runni
 
 ## How it works
 
-- **Two modes.** `strict` stops at any real uncertainty and asks you. `auto` proceeds on reversible, low-risk points (logging each to `decisions.md`) but still stops at irreversible red lines — schema, API contracts, auth, deletions, PRD-uncovered core decisions. The skill forces you to confirm the mode before any work starts.
+- **Two modes.** `strict` stops at any real uncertainty and asks you. `auto` proceeds on reversible, low-risk points (logging each to `RUN_ROOT/decisions.md`) but still stops at irreversible red lines — schema, API contracts, auth, deletions, PRD-uncovered core decisions. The skill forces you to confirm the mode before any work starts.
 - **Serial batches, parallel within a batch.** Each batch ends at a **fence** that does two jobs: it collects and resolves the batch's open questions, and it runs an independent acceptance agent against the original intent. Errors cannot cross a fence, so a source error stays contained to one batch instead of compounding.
 - **The first batch is always planning.** It decomposes the goal, plans the batches and their dependency graph, sets per-batch acceptance criteria, and writes `goal.md` — then passes its own fence before any building begins.
-- **State lives on disk.** The manager session keeps one line per task; full Task Cards and Worker Reports live in `.conductor/`. A closed batch is cleared from context, so the session carries the weight of only one batch at any moment.
-- **Acceptance is independent.** The acceptance agent judges against `goal.md` and checks it reran itself — not the implementer's "all tests passed."
+- **State lives on disk per run.** The manager creates a unique `RUN_ROOT` under `.conductor/runs/<date>-<slug>/`; full Task Cards and Worker Reports live there so different goals do not overwrite each other. A closed batch is cleared from context, so the session carries the weight of only one batch at any moment.
+- **Acceptance is independent.** The acceptance agent judges against `RUN_ROOT/goal.md` and checks it reran itself — not the implementer's "all tests passed."
+- **External acceptance is formal.** If the user names Claude App, Chrome/Computer, another model, or a human reviewer as an acceptance participant, that participant becomes part of the fence and must return an explicit judgment before completion.
+- **Runtime acceptance checks reality.** For local apps, live providers, auth, payments/points, or runtime config, the fence verifies effective running state rather than only code or `.env`.
 
 ## Use When
 
@@ -28,7 +30,7 @@ Copy this repository into your skills directory:
 
 ```bash
 mkdir -p ~/.codex/skills/conductor
-cp -R SKILL.md agents references evals ~/.codex/skills/conductor/
+cp -R README.md SKILL.md agents references evals ~/.codex/skills/conductor/
 ```
 
 Then invoke it as `$conductor` when your runtime supports skill references.
@@ -36,18 +38,22 @@ Then invoke it as `$conductor` when your runtime supports skill references.
 ## Contents
 
 - `SKILL.md`: the orchestration contract — modes, batch execution, persistence, the uncertainty rule, acceptance, and the manager loop.
-- `references/templates.md`: Task Card, Worker Prompt, Worker Report, and Acceptance Gate templates.
-- `evals/README.md`: prompt evals for mode confirmation, auto red-line stops, fallback honesty, edit conflicts, cold-start context, and acceptance reruns.
+- `references/templates.md`: Task Card, Worker Prompt, Worker Report, Acceptance Gate, and External Acceptance Prompt templates.
+- `evals/README.md`: prompt evals for mode confirmation, auto red-line stops, fallback honesty, edit conflicts, cold-start context, acceptance reruns, external acceptance, and run-root isolation.
 - `agents/openai.yaml`: optional agent metadata for runtimes that support it.
 
-## `.conductor/` layout
+## Run-root layout
+
+Each conductor invocation creates a unique run root:
 
 ```text
-.conductor/
+.conductor/runs/<YYYYMMDD-HHMM>-<short-goal-slug>/
 ├── goal.md          # original-intent anchor + effective red lines
 ├── plan.md          # batch blueprint: tasks per batch, dependency graph, acceptance criteria
 ├── tasks/           # one Task Card per task
-├── reports/         # one Worker Report or Acceptance result per task
+├── reports/         # Worker, Acceptance, or External Acceptance reports
 ├── decisions.md     # auto-mode decision log
 └── batches/         # per-batch outputs and acceptance results
 ```
+
+Do not write new run files directly to top-level `.conductor/goal.md`, `.conductor/tasks/`, or `.conductor/reports/`; those paths are treated as legacy data and left untouched.

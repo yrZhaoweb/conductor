@@ -22,11 +22,13 @@ Skeleton:
 ```text
 one sentence starts goal mode
   -> confirm mode (auto / strict)             # do not guess this
+  -> create a unique RUN_ROOT under .conductor/runs/
   -> Batch 0 = planning: decompose, plan batches, set per-batch acceptance, write goal.md
        -> planning passes a fence (user confirm in strict / independent intent-check in auto)
   -> execute batches serially, parallel within each:
        workers do only the certain; an uncertain point -> Needs-decision (handled per mode)
        fence: bulk-resolve doubts + independent acceptance vs original intent (rerun checks)
+              + any user-specified external/joint acceptance
        pass -> persist, clear batch detail from context, advance
   -> goal done -> manager reports final delivery state
 ```
@@ -63,14 +65,14 @@ Any real uncertainty stops at the fence and bounces to the user. If the user doe
 
 The user is away (e.g. asleep) and wants the run to make progress, then review afterward. auto is **not** "guess whenever unsure" — that returns a project that confidently ran the wrong way all night, which is worse than nothing. auto splits uncertainty by reversibility:
 
-- **Reversible / low-risk / local** (variable names, an internal implementation choice, whether to add a helper) — the worker decides, proceeds, and logs the call to `.conductor/decisions.md`. This is the room the AI is given to move.
+- **Reversible / low-risk / local** (variable names, an internal implementation choice, whether to add a helper) — the worker decides, proceeds, and logs the call to `RUN_ROOT/decisions.md`. This is the room the AI is given to move.
 - **Irreversible / high-risk / global — a red line** — the worker stops and asks the user **even in auto**. Guess one of these wrong and every later batch builds on it; that is source error being amplified, and it cannot be cheaply undone after the user wakes.
 
 One line: strict asks about all uncertainty; auto asks only about the uncertainty that causes disaster if guessed wrong. auto does not turn off the brakes — it raises the threshold, braking at the cliff edge, not at every speed bump.
 
 ### Red lines (the irreversible set)
 
-auto must stop at these even though it is the autonomous mode. The skill ships a default set; the user may add to it when starting auto. The effective set = default + user additions, recorded in `.conductor/goal.md`.
+auto must stop at these even though it is the autonomous mode. The skill ships a default set; the user may add to it when starting auto. The effective set = default + user additions, recorded in `RUN_ROOT/goal.md`.
 
 Default red lines:
 
@@ -84,6 +86,8 @@ Default red lines:
 ### decisions.md (auto only)
 
 Every decision a worker or the manager makes autonomously under auto gets one line: **what was decided / why / why it is reversible.** The user's first action on returning is to scan this log — five minutes to see every call made on their behalf and pull back anything wrong. Hands-off without going blind.
+
+Write decisions to this run's `RUN_ROOT/decisions.md`, not to a shared top-level file.
 
 ### Behavior table
 
@@ -106,7 +110,7 @@ Before the first execution batch:
 1. Restate the goal in one sentence and confirm the mode (Mode).
 2. Define success criteria and non-goals.
 3. Choose the workload level (Workload Levels).
-4. Create `.conductor/goal.md` and `.conductor/plan.md`.
+4. Create a unique run root under `.conductor/runs/`, then create `RUN_ROOT/goal.md` and `RUN_ROOT/plan.md`.
 
 When a worker returns `Needs-decision`, the manager **escalates it to the user — it does not decide.** A manager picking the answer is just another AI guess wearing a manager's hat, which is the exact failure the run exists to prevent. (In auto, the manager may resolve only reversible, non-red-line points, and must log them to decisions.md.)
 
@@ -151,7 +155,7 @@ Goal mode does not start building. Batch 0 produces the blueprint:
 - Goal decomposition and non-goals
 - The batch plan: which parallel tasks per batch, and the dependency graph that justifies the boundaries
 - Acceptance criteria for each batch
-- `.conductor/goal.md` (the original-intent anchor) and the effective red-line set
+- `RUN_ROOT/goal.md` (the original-intent anchor) and the effective red-line set
 
 The planning batch passes its own fence: user confirmation in strict, or an independent agent checking the plan against the original intent in auto. If the batching itself is an AI guess, source error is injected at step one and no later fence can catch "the split was wrong." Make the plan a constrained, confirmed first batch.
 
@@ -160,28 +164,46 @@ The planning batch passes its own fence: user confirmation in strict, or an inde
 The manager session must not carry full Task Cards and full Worker Reports in context — that is how context decays on a long run. They live on disk. The session keeps **one line per task**, e.g.:
 
 ```text
-P1-IMPL-01 | done | reworked auth module | .conductor/reports/P1-IMPL-01.md
+P1-IMPL-01 | done | reworked auth module | RUN_ROOT/reports/P1-IMPL-01.md
 ```
 
 Read the file when you need the detail; drop it from working attention once read.
 
-### `.conductor/` layout
+### Run root isolation
+
+Every conductor invocation owns a unique `RUN_ROOT`. Do **not** put run files directly at `.conductor/goal.md`, `.conductor/plan.md`, `.conductor/tasks/`, or `.conductor/reports/`; that causes later goals to overwrite earlier ones.
+
+Default location:
 
 ```text
-.conductor/
+.conductor/runs/<YYYYMMDD-HHMM>-<short-goal-slug>/
+```
+
+Rules:
+
+- Pick the slug from the user goal, not from an implementation detail. Keep it short and filesystem-safe.
+- If the target path already exists, append `-2`, `-3`, or a short thread/session id; never overwrite an existing run.
+- Record `RUN_ROOT` in the first user-visible plan update and in the final report.
+- If an older repo already has top-level `.conductor/goal.md` or `.conductor/reports/`, leave it untouched and create a new run root.
+- Optional index files such as `.conductor/index.md` or `.conductor/latest` may point to active runs, but they are convenience pointers only. The source of truth is always inside `RUN_ROOT`.
+
+### `RUN_ROOT` layout
+
+```text
+RUN_ROOT/
 ├── goal.md          # original-intent anchor + effective red lines (write once, treat as source of truth)
 ├── plan.md          # batch blueprint: tasks per batch, dependency graph, per-batch acceptance criteria
 ├── tasks/           # one Task Card per task
-├── reports/         # one Worker Report or Acceptance result per task
+├── reports/         # one Worker, Acceptance, or External Acceptance result per task/checkpoint
 ├── decisions.md     # auto-mode decision log (what / why / why reversible)
 └── batches/         # per-batch outputs and acceptance results, archived at each fence
 ```
 
-If the target repo must not be modified, create `.conductor/` in the manager's workspace and record that location in the final report. If files cannot be written, report `persistent state unavailable` and fall back to the runtime-fallback labels.
+If the target repo must not be modified, create the same run-root layout in the manager's workspace and record that location in the final report. If files cannot be written, report `persistent state unavailable` and fall back to the runtime-fallback labels.
 
 ### The batch is the context-recycling boundary
 
-When a batch closes — persisted, accepted — clear its details from the session and keep one line: `Batch N: passed, output in .conductor/batches/N/`. The next batch enters against clean context. However large the goal, the manager session carries the weight of exactly one batch at any moment. A manager resuming after compaction reads `goal.md`, then `plan.md`, then the current batch's task cards and latest reports — never chat history alone.
+When a batch closes — persisted, accepted — clear its details from the session and keep one line: `Batch N: passed, output in RUN_ROOT/batches/N/`. The next batch enters against clean context. However large the goal, the manager session carries the weight of exactly one batch at any moment. A manager resuming after compaction reads `RUN_ROOT/goal.md`, then `RUN_ROOT/plan.md`, then the current batch's task cards and latest reports — never chat history alone.
 
 ## Workload Levels
 
@@ -191,6 +213,7 @@ Not every invocation needs the full planning-batch-and-fence machinery. Match th
 - **Lightweight** — one slice, low risk, no parallel edits. Dispatch implementation + acceptance; a separate testing/review agent is optional. No planning batch required.
 - **Standard** — 2–5 workers with clean boundaries, in one or two batches; implementation plus the testing/review/integration/acceptance roles the slice needs.
 - **Large goal** — full Batch Execution: planning batch first, then serial execution batches behind fences.
+- **Runtime-only batch** — no application code changes; the batch starts services, operates UI/tools, exercises live integrations, or adjusts local runtime state for verification. It still needs a Task Card, report, and independent acceptance. The report must separate changed files from runtime mutations and say whether local state changes enter git, seed, migration, or provisioning.
 
 ## Runtime Adapter
 
@@ -198,8 +221,8 @@ Use the local runtime's delegation mechanism without hard-coding this skill to o
 
 | Runtime | Dispatch pattern | Tracking pattern |
 | --- | --- | --- |
-| Claude Code | Start child agents with Task Cards (parallel within a batch). | Track status in the todo list and `.conductor/`. |
-| Codex / CLI / other agents | Use independent sessions, processes, worktrees, or a watchdog/script loop. | Track session names, task IDs, files, commands, and reports in `.conductor/`. |
+| Claude Code | Start child agents with Task Cards (parallel within a batch). | Track status in the todo list and `RUN_ROOT`. |
+| Codex / CLI / other agents | Use independent sessions, processes, worktrees, or a watchdog/script loop. | Track session names, task IDs, files, commands, and reports in `RUN_ROOT`. |
 | No delegation tool | Runtime fallback: ask whether to switch to single-agent work or produce a plan only; label every status `not delegated` / `no delegated evidence`. | Mark work as not delegated; never claim multi-agent evidence. |
 
 The Task Card and Worker Report formats are the adapter boundary. Runtime mechanics may vary; the contract does not.
@@ -214,7 +237,7 @@ Before dispatching a batch's implementation tasks:
 - Two parallel workers must not write the same file or tightly coupled shared state.
 - Shared types, config, routing, migrations, API contracts, and generated files get one declared owner.
 - If slices need the same files, place them in different batches, use separate worktrees, or assign an integration agent to reconcile after isolated edits.
-- If overlap is discovered after dispatch, pause the affected workers, update `.conductor/`, and reassign narrower tasks.
+- If overlap is discovered after dispatch, pause the affected workers, update `RUN_ROOT`, and reassign narrower tasks.
 
 High-conflict work still fits this skill — it just becomes more serial batches instead of wider parallelism.
 
@@ -224,7 +247,7 @@ A batch opens its fence only when an **independent acceptance agent** clears it.
 
 **The basis of acceptance must be independent of the thing being accepted.** Changing the agent's identity is not enough — the *information source* must change too. So the acceptance agent judges against two things, and **the implementer's report conclusions are not among them**:
 
-1. The original intent — `.conductor/goal.md` and the batch's acceptance criteria, not a downstream-processed restatement.
+1. The original intent — `RUN_ROOT/goal.md` and the batch's acceptance criteria, not a downstream-processed restatement.
 2. Checks the acceptance agent **reran itself** — the key test command, the critical request path, the generated rows — observed first-hand.
 
 Reading the worker's "all tests passed" is not acceptance. The acceptance agent answers the Acceptance Gate in `references/templates.md`, including which checks it reran and what came back.
@@ -248,6 +271,42 @@ The manager coordinates the response to an outcome but does not substitute its o
 
 If a check cannot run, the responsible agent says exactly why and what evidence remains; the manager reports that without converting it into acceptance.
 
+## External and Joint Acceptance
+
+If the user specifies an external acceptance participant — for example Claude App, a browser/Chrome session, Computer Use, another model conversation, a human reviewer, or a named tool — treat that participant as a formal fence member, not as casual advice.
+
+Rules:
+
+- Declare in `RUN_ROOT/plan.md` which batch or final fence requires external/joint acceptance.
+- The external acceptance prompt must be self-contained: original goal, success criteria, completed checkpoints, evidence paths, known residual risks, and the exact questions to judge.
+- Ask for an explicit `PASS`, `FAIL`, `PARTIAL`, or `BLOCKED`. If `FAIL`, ask for required rework. If `PASS`, ask for non-blocking residuals.
+- Send the prompt in one complete message when the user requests that, or when the external participant may not share this session's context.
+- Persist the result as a report under `RUN_ROOT/reports/`; do not mark the goal complete until all user-specified external acceptance gates pass or the user explicitly waives them.
+- If the external participant cannot rerun part of the evidence, record that limitation separately from the judgment.
+
+### Runtime acceptance
+
+For goals involving local apps, live services, third-party providers, payments/points, auth, permissions, or cross-service configuration, code review is not enough. Acceptance must inspect the actual runtime state.
+
+Runtime evidence may include:
+
+- Service health and the exact local URLs used.
+- UI operation through browser/computer tools, with visible state, screenshots, console/network observations, or DOM evidence.
+- Persisted rows, logs, events, or API responses produced by the live path.
+- Effective configuration as read by the running app, not only `.env`, config files, or defaults.
+
+If a config value can be overridden by database rows, admin settings, environment precedence, feature flags, or remote config, acceptance must verify the final effective value.
+
+### Residual risk classification
+
+At final fences, classify every known leftover issue:
+
+- **Blocker** — violates the original goal or a red line; create repair work and do not complete.
+- **Non-blocking residual** — real issue, but the original goal is achieved; record it in the final report.
+- **Follow-up checklist** — recommended before demo/release/production, but not part of the current acceptance gate.
+
+Do not hide residuals inside a generic "risks" paragraph. Ask acceptance agents and external reviewers to classify them explicitly.
+
 ## Agent Roles
 
 - **Implementation** — changes code, docs, data, or config.
@@ -261,20 +320,22 @@ One agent may hold several roles only when the workload level allows it and inde
 ## Manager Loop
 
 1. **Mode** — confirm `auto` / `strict` (ask if unspecified). In auto, record the effective red-line set.
-2. **Plan batch** — dispatch the planning batch; write `goal.md` and `plan.md`. Pass its fence (user confirm in strict; independent intent-check in auto).
-3. For each execution batch, in order:
-   - **Card** — write each Task Card to `.conductor/tasks/`; verify non-overlapping allowed paths.
+2. **Run root** — create a unique `RUN_ROOT` under `.conductor/runs/` (or the manager workspace if the repo cannot be modified). Announce it once.
+3. **Plan batch** — dispatch the planning batch; write `RUN_ROOT/goal.md` and `RUN_ROOT/plan.md`. Pass its fence (user confirm in strict; independent intent-check in auto).
+4. For each execution batch, in order:
+   - **Card** — write each Task Card to `RUN_ROOT/tasks/`; verify non-overlapping allowed paths.
    - **Dispatch** — start the batch's independent workers in parallel.
    - **Collect** — workers return done or `Needs-decision`; persist reports; keep one line each in session.
-   - **Fence** — handle the batch's doubts in bulk (escalate red lines and strict-mode calls to the user; log reversible auto calls); run independent acceptance against original intent.
-   - **Close** — on pass, archive to `.conductor/batches/N/`, clear batch detail from context, keep one summary line, and advance.
-4. **Deliver** — report the final state, per-batch acceptance evidence, changed boundaries, residual risk, and the `.conductor/` location.
+   - **Fence** — handle the batch's doubts in bulk (escalate red lines and strict-mode calls to the user; log reversible auto calls); run independent acceptance against original intent; run any declared external/joint acceptance.
+   - **Close** — on pass, archive to `RUN_ROOT/batches/N/`, clear batch detail from context, keep one summary line, and advance.
+5. **Closeout** — before declaring the goal complete, ensure all reports are written, the final fence is updated in `plan.md`, user-facing logs/docs are updated if requested, child agents are closed, residuals are classified, and all user-specified external acceptance gates have passed or been waived.
+6. **Deliver** — report the final state, per-batch acceptance evidence, changed boundaries, residual risk, and the `RUN_ROOT` location.
 
 If acceptance is missing for a batch, dispatch an acceptance task — do not open the fence yourself.
 
 ## Templates
 
-Task Card, Worker Prompt, Worker Report, and Acceptance Gate formats live in `references/templates.md`. A worker prompt is a Task Card plus three rules. Store filled cards in `.conductor/tasks/` and reports in `.conductor/reports/`.
+Task Card, Worker Prompt, Worker Report, Acceptance Gate, and External Acceptance Prompt formats live in `references/templates.md`. A worker prompt is a Task Card plus three rules. Store filled cards in `RUN_ROOT/tasks/` and reports in `RUN_ROOT/reports/`.
 
 ## Common Failure Modes
 
@@ -283,26 +344,30 @@ Task Card, Worker Prompt, Worker Report, and Acceptance Gate formats live in `re
 - **Manager answers a Needs-decision itself** — escalate to the user instead (reversible auto calls excepted, with a log line).
 - **auto turns into "guess whenever"** — re-check the red lines; irreversible/global points stop even in auto.
 - **Acceptance only reads reports** — require a first-hand rerun and judgment against `goal.md`.
-- **State lives only in chat** — create/repair `.conductor/`; one line per task in session, detail on disk.
+- **State lives only in chat** — create/repair `RUN_ROOT`; one line per task in session, detail on disk.
+- **Runs overwrite each other** — stop writing to top-level `.conductor/goal.md` or `.conductor/reports/`; create a unique run root under `.conductor/runs/`.
 - **Workers overlap** — pause, split allowed paths, or add an integration owner.
 - **No delegation runtime** — use fallback labeling; never invent reports.
+- **External reviewer treated as chat advice** — add it to the fence, send a self-contained prompt, and persist its PASS/FAIL report.
+- **Runtime goal accepted from static files** — verify the effective running state, not only code or `.env`.
 
 ## Output Shape
 
 ```text
 Goal: <done / partial / failed / blocked>
 Mode: <auto / strict>   Level: <trivial / lightweight / standard / large goal / fallback>
-State: <.conductor location, or persistent state unavailable>
+State: <RUN_ROOT location, or persistent state unavailable>
 Batches:
-- Batch <N>: <pass / partial / fail / blocked> — <one-line outcome> (.conductor/batches/<N>/)
+- Batch <N>: <pass / partial / fail / blocked> — <one-line outcome> (RUN_ROOT/batches/<N>/)
 Success criteria:
 - <criterion> -> <pass/fail/partial/unchecked> (<first-hand evidence>)
 Acceptance reruns:
 - <command/check> -> <result>
-Auto decisions: <count, see .conductor/decisions.md>   # auto only
+External acceptance: <not required / pass / partial / fail / blocked> (<report path>)
+Auto decisions: <count, see RUN_ROOT/decisions.md>   # auto only
 Open Needs-decision: <questions for the user, or "none">
 Changed: <files, artifacts, commits, docs>
-Residual risk: <real remaining risk, or "none known">
+Residual risk: <blockers / non-blocking residuals / follow-up checklist>
 Delegation note: <delegated / trivial manager edit / fallback not delegated>
 ```
 
@@ -340,7 +405,7 @@ Batch 1 — foundation (parallel; non-overlapping paths)
 - P1-UI-01 shell, nav, empty states
 Fence: integration check + independent acceptance vs goal.md. An open API-contract
 question is a red line -> bounced to the user even in auto. On pass, archive to
-.conductor/batches/1/, clear context, advance.
+RUN_ROOT/batches/1/, clear context, advance.
 
 Batch 2 — depends on Batch 1 contracts: live data, filters, route tests, phase acceptance.
 ```
