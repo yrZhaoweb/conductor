@@ -1,0 +1,22 @@
+{
+  "name": "conductor-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "conductor-harness": "dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "harness": "node dist/src/cli.js",
+    "test:m1": "npm run build && node --test dist/test/m1-fence-acceptance.test.js",
+    "test:m2": "npm run build && node --test dist/test/m2-redlines-hook.test.js",
+    "test:m3": "npm run build && node --test dist/test/m3-worktrees.test.js",
+    "test:m4": "npm run build && node --test dist/test/m4-docs-contract.test.js",
+    "test:bypass": "npm run build && node -e \"const fs=require('fs'); if(!fs.existsSync('dist/test/bypass')) process.exit(1);\" && node --test dist/test/bypass/*.test.js",
+    "test": "npm run test:m1 && npm run test:m2 && npm run test:m3 && npm run test:m4 && npm run test:bypass"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

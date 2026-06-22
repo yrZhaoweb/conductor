@@ -36,6 +36,34 @@ Stop rule: Do the certain at full speed. If you hit a decision the inputs do not
 
 `Inputs` must assume the child agent starts cold and cannot see the manager's conversation. Include the repo path, relevant files, constraints, previous conclusions, and exact success criteria.
 
+### Task Card JSON
+
+When the harness is active, store a machine-readable mirror beside the Markdown card:
+
+```json
+{
+  "schemaVersion": 1,
+  "taskId": "P1-IMPL-01",
+  "role": "implementation",
+  "batch": 1,
+  "mode": "auto",
+  "status": "pending",
+  "objective": "single bounded outcome",
+  "scope": "included surfaces",
+  "allowedPaths": ["src/feature/**"],
+  "readPaths": ["src/shared/**"],
+  "nonGoals": ["do not edit auth"],
+  "redLines": ["database/migrations", "auth/permissions"],
+  "redLineTriggered": false,
+  "dependsOn": [],
+  "expectedEvidence": ["npm test"],
+  "reportPath": "reports/P1-IMPL-01.md"
+}
+```
+
+The Markdown card remains the human prompt. The JSON card is what `conductor-harness`
+uses for worktree setup, merge metadata, and optional path checks.
+
 ## Worker Prompt
 
 A worker prompt is the Task Card plus three rules:
@@ -91,6 +119,44 @@ Basis: read <RUN_ROOT>/goal.md and the batch's acceptance criteria directly.
 Use the actual `RUN_ROOT/goal.md` path in the `Basis` line. If the acceptance target includes a runtime-only batch, distinguish code/static evidence from live runtime evidence and state any runtime mutations separately.
 
 Acceptance rests on `goal.md` plus at least one check the acceptance agent reran first-hand. "Looks good" and "the report says it passed" are not acceptance results. If a rerun cannot be performed, the judgment cannot be `pass` unless the user explicitly accepts that limitation.
+
+### Harness Verdict
+
+When the harness is active, the fence source of truth is the signed
+`RUN_ROOT/batches/<N>/verdict.json`, not a Markdown status line:
+
+```json
+{
+  "schemaVersion": 1,
+  "batch": 1,
+  "taskId": "P1-ACC-01",
+  "verdict": "PASS",
+  "criteria": [
+    {
+      "id": "C1",
+      "status": "pass",
+      "evidenceRefs": ["R1"]
+    }
+  ],
+  "rerunLogs": [
+    {
+      "id": "R1",
+      "path": "batches/1/acceptance/reruns/R1.log",
+      "sha256": "<log hash>",
+      "command": "npm test",
+      "exitCode": 0
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "<public key hash>",
+    "value": "<signed verdict payload>"
+  }
+}
+```
+
+`conductor-harness batch start --batch N+1` accepts only a signed `PASS` verdict whose
+rerun logs still exist and match their recorded hashes.
 
 ## External Acceptance Prompt
 

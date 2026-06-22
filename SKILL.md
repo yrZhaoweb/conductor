@@ -351,15 +351,26 @@ One agent may hold several roles only when the workload level allows it and inde
 
 ## Manager Loop
 
+The prompt contract defines what must happen; the local harness enforces the mechanical
+parts. When `conductor-harness` is available, the manager calls the CLI and follows its
+exit codes. Do not advance a batch because a model says it passed — advance only when the
+harness accepts the prior signed verdict, rerun logs, git hooks, and git merges.
+
+Harness hard walls are mechanical, not semantic. They can enforce file/process/git
+boundaries; the meaning of a red line and the classification of real uncertainty still
+require model or human judgment.
+
 1. **Mode** — default to `auto`; use `strict` only if the user explicitly asked. Announce the active mode in one line (do not block on it). In auto, record the effective red-line set and plan to seek external joint acceptance at the final fence.
-2. **Run root** — create a unique `RUN_ROOT` under `.conductor/runs/` (or the manager workspace if the repo cannot be modified). Announce it once.
-3. **Plan batch** — dispatch the planning batch; write `RUN_ROOT/goal.md` and `RUN_ROOT/plan.md`. Pass its fence (user confirm in strict; independent intent-check in auto).
+2. **Run root** — create a unique `RUN_ROOT` under `.conductor/runs/` (or the manager workspace if the repo cannot be modified), then run `conductor-harness init --run-root <RUN_ROOT> --repo <repo> --mode <auto|strict>`. Announce it once.
+3. **Plan batch** — dispatch the planning batch; write `RUN_ROOT/goal.md` and `RUN_ROOT/plan.md`. Pass its fence (user confirm in strict; independent intent-check in auto). Before any implementation batch, install red-line commit protection with `conductor-harness redlines install-hook --repo <repo> --run-root <RUN_ROOT>`.
 4. For each execution batch, in order:
+   - **Gate** — run `conductor-harness batch start --run-root <RUN_ROOT> --batch <N>`. For `N > 0`, a non-zero exit means the prior fence is not open; stop instead of continuing.
    - **Card** — write each Task Card to `RUN_ROOT/tasks/`; verify non-overlapping allowed paths.
-   - **Dispatch** — start the batch's independent workers in parallel.
+   - **Dispatch** — start the batch's independent workers in parallel. When using the harness worktree adapter, run `conductor-harness worker start --run-root <RUN_ROOT> --repo <repo> --task <task.json>` for each worker so writes are isolated.
    - **Collect** — workers return done or `Needs-decision`; persist reports; keep one line each in session.
-   - **Fence** — handle the batch's doubts in bulk (escalate red lines and strict-mode calls to the user; log reversible auto calls); run independent acceptance against original intent; run any declared external/joint acceptance, and in auto proactively attempt external joint acceptance via computer-use (at least at the final fence), recording `external acceptance unavailable` if no party can be reached.
-   - **Close** — on pass, archive to `RUN_ROOT/batches/N/`, clear batch detail from context, keep one summary line, and advance.
+   - **Integrate** — merge worker branches with `conductor-harness worker merge --run-root <RUN_ROOT> --repo <repo> --task <task-id>`. A non-zero exit from git merges or path checks keeps the error inside this batch.
+   - **Fence** — handle the batch's doubts in bulk (escalate red lines and strict-mode calls to the user; log reversible auto calls); run independent acceptance through `conductor-harness accept run` against original intent. The harness constructs the acceptance context from `goal.md`, batch criteria, and first-hand rerun logs; implementer report conclusions are not injected. Run any declared external/joint acceptance, and in auto proactively attempt external joint acceptance via computer-use (at least at the final fence), recording `external acceptance unavailable` if no party can be reached.
+   - **Close** — on signed `PASS` verdict, archive to `RUN_ROOT/batches/N/`, clear batch detail from context, keep one summary line, and advance. If the verdict is missing, unsigned, lacks real rerun evidence, or is not `PASS`, the next `batch start` exits non-zero and the fence stays closed.
 5. **Closeout** — before declaring the goal complete, ensure all reports are written, the final fence is updated in `plan.md`, user-facing logs/docs are updated if requested, child agents are closed, residuals are classified, and all user-specified external acceptance gates have passed or been waived.
 6. **Deliver** — report the final state, per-batch acceptance evidence, changed boundaries, residual risk, and the `RUN_ROOT` location.
 

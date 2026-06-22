@@ -43,6 +43,36 @@ cp -R README.md SKILL.md agents references evals examples "$SKILLS_DIR/conductor
 
 Then invoke it as `$conductor` (or your runtime's skill-reference form).
 
+## Harness
+
+This repository also ships a minimal local harness that turns Conductor's mechanical
+rules into CLI and git gates. Build it before using harness-backed runs:
+
+```bash
+npm install
+npm run build
+```
+
+Minimal flow:
+
+```bash
+RUN_ROOT=.conductor/runs/20260622-demo
+conductor-harness init --repo "$PWD" --run-root "$RUN_ROOT" --mode auto
+conductor-harness redlines install-hook --repo "$PWD" --run-root "$RUN_ROOT"
+conductor-harness batch start --run-root "$RUN_ROOT" --batch 0
+conductor-harness accept run --repo "$PWD" --run-root "$RUN_ROOT" --batch 0 \
+  --task P0-ACC-01 \
+  --criteria "Batch 0 Acceptance Criteria" \
+  --rerun "npm test" \
+  --runtime command \
+  --runtime-command "node test/fixtures/acceptance-pass.cjs"
+conductor-harness batch start --run-root "$RUN_ROOT" --batch 1
+```
+
+The important boundary: the harness enforces process gates with exit codes, signed
+`verdict.json` files, rerun logs, git hooks, and git merges. It does not eliminate semantic
+judgment about what counts as a red line or real uncertainty.
+
 ## Contents
 
 - `SKILL.md`: the orchestration contract — modes, batch execution, persistence, the uncertainty rule, acceptance, and the manager loop.
@@ -50,6 +80,9 @@ Then invoke it as `$conductor` (or your runtime's skill-reference form).
 - `evals/README.md`: prompt evals for mode confirmation, auto red-line stops, fallback honesty, edit conflicts, cold-start context, acceptance reruns, external acceptance, and run-root isolation.
 - `examples/sample-run/`: a real, lightly redacted `RUN_ROOT` from an actual run — first-hand evidence of the contract in action (independent acceptance returning Needs-decision, an error caught and fixed inside one batch, external Claude acceptance).
 - `agents/openai.yaml`: optional manifest read by runtimes that support agent metadata (display name, short description, default invocation prompt). Runtimes that do not support it ignore the file; nothing in the contract depends on it.
+- `src/`: Node.js + TypeScript harness CLI.
+- `docs/harness-usage.md`: short operator guide for harness-backed runs.
+- `docs/harness-threat-model.md`: what the harness can and cannot enforce.
 
 ## Run-root layout
 
