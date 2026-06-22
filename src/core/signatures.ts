@@ -1,10 +1,12 @@
 import {
+  createPublicKey,
   createHash,
   generateKeyPairSync,
   sign as cryptoSign,
   verify as cryptoVerify
 } from "node:crypto";
-import { existsSync, chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, chmodSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { ensureDir, safeJoin } from "./paths.js";
 
@@ -17,21 +19,35 @@ export type SignatureBlock = {
 export function ensureSigningKeys(runRoot: string): void {
   const harnessDir = safeJoin(runRoot, ".harness");
   const publicPath = safeJoin(runRoot, ".harness", "acceptance-public-key.pem");
-  const privatePath = safeJoin(runRoot, ".harness", "acceptance-private-key.pem");
+  const legacyPrivatePath = safeJoin(runRoot, ".harness", "acceptance-private-key.pem");
+  const privatePath = privateKeyPathForRun(runRoot);
   ensureDir(harnessDir);
-  if (existsSync(publicPath) && existsSync(privatePath)) {
+  ensureDir(path.dirname(privatePath));
+  chmodSync(path.dirname(privatePath), 0o700);
+
+  if (!existsSync(privatePath) && existsSync(legacyPrivatePath)) {
+    writeFileSync(privatePath, readFileSync(legacyPrivatePath, "utf8"), { mode: 0o600 });
+    chmodSync(privatePath, 0o600);
+  }
+
+  if (existsSync(privatePath)) {
+    const publicPem = publicKeyFromPrivate(readFileSync(privatePath, "utf8"));
+    writeFileSync(publicPath, publicPem);
+    removeLegacyPrivateKey(legacyPrivatePath);
     return;
   }
+
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   writeFileSync(publicPath, publicKey.export({ type: "spki", format: "pem" }));
   writeFileSync(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }), {
     mode: 0o600
   });
   chmodSync(privatePath, 0o600);
+  removeLegacyPrivateKey(legacyPrivatePath);
 }
 
 export function signPayload(runRoot: string, payload: unknown): SignatureBlock {
-  const privatePath = safeJoin(runRoot, ".harness", "acceptance-private-key.pem");
+  const privatePath = privateKeyPathForRun(runRoot);
   const publicPath = safeJoin(runRoot, ".harness", "acceptance-public-key.pem");
   const privatePem = readFileSync(privatePath, "utf8");
   const publicPem = readFileSync(publicPath, "utf8");
@@ -81,6 +97,32 @@ export function stableStringify(value: unknown): string {
 export function keyPaths(runRoot: string): { publicPath: string; privatePath: string } {
   return {
     publicPath: path.join(runRoot, ".harness", "acceptance-public-key.pem"),
-    privatePath: path.join(runRoot, ".harness", "acceptance-private-key.pem")
+    privatePath: privateKeyPathForRun(runRoot)
   };
+}
+
+export function privateKeyPathForRun(runRoot: string): string {
+  const baseDir = process.env.CONDUCTOR_HARNESS_KEY_DIR
+    ? path.resolve(process.env.CONDUCTOR_HARNESS_KEY_DIR)
+    : path.join(process.env.XDG_STATE_HOME ?? path.join(homedir(), ".local", "state"), "conductor", "harness-keys");
+  const keyDir = path.join(baseDir, sha256(path.resolve(runRoot)));
+  assertOutsideRunRoot(runRoot, keyDir);
+  return path.join(keyDir, "acceptance-private-key.pem");
+}
+
+function publicKeyFromPrivate(privatePem: string): string {
+  return createPublicKey(privatePem).export({ type: "spki", format: "pem" }).toString();
+}
+
+function removeLegacyPrivateKey(privatePath: string): void {
+  if (existsSync(privatePath)) {
+    unlinkSync(privatePath);
+  }
+}
+
+function assertOutsideRunRoot(runRoot: string, candidatePath: string): void {
+  const relative = path.relative(path.resolve(runRoot), path.resolve(candidatePath));
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+    throw new Error(`Acceptance private key path must be outside RUN_ROOT: ${candidatePath}`);
+  }
 }
