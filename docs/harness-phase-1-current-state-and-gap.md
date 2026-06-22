@@ -1,7 +1,10 @@
 # Phase 1 Research: Current State and Gap
 
+Status: design-only
+
 Date: 2026-06-22
-Scope: research only. No harness implementation code was written in this phase.
+Scope: historical research only. No harness implementation code was written in this
+phase; current implementation status is in `src/`, `test/`, and the README status block.
 
 ## Files Read
 

@@ -360,6 +360,18 @@ Harness hard walls are mechanical, not semantic. They can enforce file/process/g
 boundaries; the meaning of a red line and the classification of real uncertainty still
 require model or human judgment.
 
+Harness-enforced and tested today:
+
+- **Fence and verdict signature validation** — Commands: `conductor-harness init`, `conductor-harness batch start`, `conductor-harness batch check`, `conductor-harness accept run`. Tests: `test/m1-fence-acceptance.test.ts`, `test/bypass/direct-verdict-forgery.test.ts`, `test/bypass/insider-self-sign.test.ts`.
+- **Red-line pre-commit hook** — Commands: `conductor-harness redlines install-hook`, `conductor-harness redlines check`, `conductor-harness redlines override mint`. Tests: `test/m2-redlines-hook.test.ts`, `test/bypass/redline-commit.test.ts`.
+- **Worktree isolation** — Commands: `conductor-harness worker start`, `conductor-harness worker merge`, `conductor-harness worker check-paths`. Tests: `test/m3-worktrees.test.ts`, `test/bypass/worktree-conflict.test.ts`.
+- **Docs contract guard** — Test: `test/m4-docs-contract.test.ts`.
+
+Prompt-layer only: semantic, enforced by model/human not harness. This includes deciding
+whether an unlisted path is semantically a red line, classifying `Needs-decision`,
+recruiting external/joint acceptance through computer-use, and judging whether evidence
+satisfies the user's original intent.
+
 1. **Mode** — default to `auto`; use `strict` only if the user explicitly asked. Announce the active mode in one line (do not block on it). In auto, record the effective red-line set and plan to seek external joint acceptance at the final fence.
 2. **Run root** — create a unique `RUN_ROOT` under `.conductor/runs/` (or the manager workspace if the repo cannot be modified), then run `conductor-harness init --run-root <RUN_ROOT> --repo <repo> --mode <auto|strict>`. Announce it once.
 3. **Plan batch** — dispatch the planning batch; write `RUN_ROOT/goal.md` and `RUN_ROOT/plan.md`. Pass its fence (user confirm in strict; independent intent-check in auto). Before any implementation batch, install red-line commit protection with `conductor-harness redlines install-hook --repo <repo> --run-root <RUN_ROOT>`.

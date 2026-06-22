@@ -1,7 +1,10 @@
 # Phase 3 Plan: Harness Implementation Milestones
 
+Status: partial
+
 Date: 2026-06-22
-Scope: implementation plan only. Do not write harness code in this phase.
+Scope: implementation plan record. The core milestones are implemented in `src/` and
+`test/`, but some planned fallbacks and watchpoints remain design notes.
 
 ## Success Criteria For Phase 4
 
@@ -22,9 +25,9 @@ Scope: implementation plan only. Do not write harness code in this phase.
   dependencies.
 - Use a deterministic `--runtime command` adapter in tests so bypass coverage does not rely
   on model availability or spend.
-- Treat the signed `verdict.json` design from Phase 2 as the default same-user enforcement
-  layer. Document that separate OS-user acceptance is a stronger optional deployment mode,
-  not an M1 blocker.
+- Treat the signed `verdict.json` design from Phase 2 as the default enforcement layer,
+  with the private signing key outside `RUN_ROOT`. Document that separate OS-user
+  acceptance or external signing is a stronger optional deployment mode, not an M1 blocker.
 - Keep Markdown task/report templates as human-readable mirrors, but make JSON files and
   process exit codes the harness's source of truth.
 

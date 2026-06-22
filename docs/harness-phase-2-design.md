@@ -1,7 +1,11 @@
 # Phase 2 Design: Conductor Harness
 
+Status: partial
+
 Date: 2026-06-22
-Scope: design only. No harness implementation code is included in this phase.
+Scope: design record. The current harness implements the core CLI gates, red-line hook,
+worktrees, and signed verdicts, but not every fallback or stronger deployment mode
+described here.
 
 ## Design Goals
 
@@ -94,15 +98,26 @@ RUN_ROOT/
     config.json
     hook.json
     acceptance-public-key.pem
-    acceptance-private-key.pem   # 0600; not read by manager commands
     redline-overrides/
 ```
 
-The `.harness/acceptance-private-key.pem` file is the pragmatic default for a same-user
-development machine. It gives the official manager CLI no verdict-writing code path, and
-the gate rejects unsigned files. For a stricter deployment, `config.json` may point to an
-external private-key command or separate acceptance user so the manager OS identity cannot
-read the private key.
+External harness state:
+
+```text
+$CONDUCTOR_HARNESS_KEY_DIR/<run-root-sha256>/acceptance-private-key.pem
+# or $XDG_STATE_HOME/conductor/harness-keys/<run-root-sha256>/acceptance-private-key.pem
+```
+
+`RUN_ROOT/.harness/` contains the public verification key only. The private signing key is
+kept outside `RUN_ROOT` so worker-accessible run contents are not sufficient to self-sign a
+`PASS` verdict.
+
+The external harness state directory is the pragmatic default for a same-user development
+machine. It gives the official manager CLI no verdict-writing code path and keeps the
+private key out of `RUN_ROOT`; the gate rejects unsigned files and run-root-only
+self-signing attempts. For a stricter deployment, signing can move to a separate OS user,
+filesystem sandbox, external private-key command, or signing service so the worker OS
+identity cannot read the private key at all.
 
 ## CLI Command Signatures
 
@@ -139,8 +154,9 @@ conductor-harness init \
   [--runtime-command <command-template>]
 ```
 
-Creates the run root layout, writes `.harness/config.json`, generates the acceptance signing
-key pair, and initializes `decisions.md`, `tasks/`, `reports/`, `batches/`, and `worktrees/`.
+Creates the run root layout, writes `.harness/config.json`, generates the acceptance public
+key under `RUN_ROOT` and private key under external harness state, and initializes
+`decisions.md`, `tasks/`, `reports/`, `batches/`, and `worktrees/`.
 
 This command may create `RUN_ROOT/goal.md` from `--goal-file` later, but it should not
 invent goal content. The manager remains responsible for writing the contract documents.
@@ -624,11 +640,12 @@ M4 should update docs and `SKILL.md` Manager Loop:
 
 ## Phase 2 Assumptions To Confirm
 
-This design makes one deliberate choice: signed verdicts are the default enforcement layer
-for same-user machines. They are enough for the required bypass test where a non-self-
-disciplined agent directly writes an unsigned or evidence-free verdict file, but they are
-not the same as separate OS-user file permissions.
+The current implementation makes one deliberate choice: signed verdicts are the default
+enforcement layer, and the private signing key lives outside `RUN_ROOT`. This is enough for
+run-root-only workers to fail direct unsigned verdicts, evidence-free verdicts, and insider
+self-signing attempts based only on run-root contents. It is still not the same as separate
+OS-user file permissions.
 
-If the desired threat model requires the manager OS identity itself to be unable to read
-the acceptance signing key, Phase 3 should add an `--acceptance-user <user>` or external
-signing-command requirement before implementation starts.
+If the desired threat model requires the worker OS identity itself to be unable to read the
+acceptance signing key, a future phase should add an `--acceptance-user <user>`, a
+filesystem sandbox, or an external signing-command/service requirement.

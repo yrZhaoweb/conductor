@@ -8,6 +8,22 @@ It is built to fight three failure modes of AI-written code on big or long-runni
 - **Context decay** — quality dropping as context gets compressed. Conductor keeps tasks small and pushes state to disk.
 - **Error amplification** — a guess filling a source gap and compounding each round. Conductor does only the certain and stops at the uncertain.
 
+## Current implementation status
+
+This repository is a version `0.1.0` skill plus a small harness. The harness-enforced,
+tested surface today is deliberately narrow:
+
+- **Fence and verdict signature validation** — Commands: `conductor-harness init`, `conductor-harness batch start`, `conductor-harness batch check`, `conductor-harness accept run`. Tests: `test/m1-fence-acceptance.test.ts`, `test/bypass/direct-verdict-forgery.test.ts`, `test/bypass/insider-self-sign.test.ts`.
+- **Red-line pre-commit hook** — Commands: `conductor-harness redlines install-hook`, `conductor-harness redlines check`, `conductor-harness redlines override mint`. Tests: `test/m2-redlines-hook.test.ts`, `test/bypass/redline-commit.test.ts`.
+- **Worktree isolation** — Commands: `conductor-harness worker start`, `conductor-harness worker merge`, `conductor-harness worker check-paths`. Tests: `test/m3-worktrees.test.ts`, `test/bypass/worktree-conflict.test.ts`.
+- **Docs contract guard** — Test: `test/m4-docs-contract.test.ts`.
+
+The following remain prompt-layer contracts: semantic, enforced by model/human not harness.
+The harness can carry artifacts and block obvious process bypasses, but it does
+not decide whether an unlisted edit is a red-line semantic change, classify
+`Needs-decision`, recruit external/joint acceptance through computer-use, or judge whether
+runtime evidence satisfies the user's real intent.
+
 ## How it works
 
 - **Two modes, default auto.** `auto` runs by default: it proceeds on reversible, low-risk points (logging each to `RUN_ROOT/decisions.md`), still stops at irreversible red lines — schema, API contracts, auth, deletions, PRD-uncovered core decisions — and proactively seeks external joint acceptance (e.g. the Claude app via computer-use) at the final fence. Say `strict` to opt into the human-in-the-loop mode, where every real uncertainty stops the goal and a human completes the decision. The skill announces the active mode but does not block the start to ask.
